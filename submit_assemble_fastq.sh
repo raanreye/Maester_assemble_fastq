@@ -9,7 +9,7 @@
 
 module load python/3.9.1
 
-python /Users/raul/Documents/GitHub/Maester_assemble_fastq/Maester_assemble_fastq.py \
-	--folder /Users/raul/Downloads/curio_seeker_pipeline_v1.0.3/Mouse_liver/ \
-	--sample_name Mouse_liver_R1.fastq.gz \
-	--cell_barcodes /Users/raul/Downloads/curio_seeker_pipeline_v1.0.3/Mouse_liver/A0018_040_BeadBarcodes.txt 
+python /path/to/Maester_assemble_fastq.py \
+	--folder /path/to/fastq/folder/ \
+	--sample_name file1_R1.fastq.gz file2_R1.fastq.gz \
+	--cell_barcodes /path/to/BeadBarcodes.txt 

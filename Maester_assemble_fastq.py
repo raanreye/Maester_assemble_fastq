@@ -11,7 +11,7 @@ This script:
 
 Input:
 
-  folder = Folder containing fastq files")
+  folder = Folder containing fastq files
   sample_name= The names of the files (Ex. file1.fastq.gz file2.fastq.gz), use 'all' if you want to run all the fastqs in your folder.
   cell_barcodes = File (.tsv or .txt) containing cell barcodes
 
@@ -138,7 +138,7 @@ def maester_assemble(folder,sample_name,cell_barcodes):
 
       # Subset fastq for 10^7 reads so its faster to run.
 
-      for n_batch, batch in enumerate(batch_iterator(SeqIO.parse(f1, "fastq"), batch_size)):
+      for _, batch in enumerate(batch_iterator(SeqIO.parse(f1, "fastq"), batch_size)):
 
         # Go through the reads in each batch
         for r1_reads in batch:
@@ -170,16 +170,23 @@ def maester_assemble(folder,sample_name,cell_barcodes):
       set_cells = set(cells)
       index_of_cell = set([i for i, item in enumerate(r1_cell) if item in set_cells])
 
-      # Open R2 and subset it based of cells that matched and change description ...
-      # to include cell ID and UMI
-      for i, r2_reads in enumerate(SeqIO.parse(f2, "fastq") ):
+      cnt = 0
+      # Subset fastq for 10^7 reads so its faster to run.
+      for _, batch in enumerate(batch_iterator(SeqIO.parse(f2, "fastq"), batch_size)):
 
-        # Only keep cells that were matched
-        if i in index_of_cell:
-          r2_reads.description = r2_reads.description + '_' + r1_cell[i] + '_' +r1_umi[i]
+        # Open batch R2 and subset it based of cells that matched and change description ...
+        # to include cell ID and UMI
+        for r2_reads in batch:
 
-          # Add the record to the list of new records.
-          new_records.append(r2_reads)
+          # Only keep cells that were matched
+          if cnt in index_of_cell:
+
+            r2_reads.description = r2_reads.description + '_' + r1_cell[cnt] + '_' +r1_umi[cnt]
+
+            # Add the record to the list of new records.
+            new_records.append(r2_reads)
+            
+          cnt += 1
 
 
       # Write the modified.fastq.gz
