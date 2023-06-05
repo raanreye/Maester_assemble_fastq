@@ -35,6 +35,28 @@ from Bio import SeqIO, bgzf
 def cutf(x, f=1, d="/", **kwargs):
   return sapply(strsplit(x, d), lambda i: i[f], **kwargs)
 
+def batch_iterator(iterator, batch_size):
+    """Returns lists of length batch_size.
+
+    This can be used on any iterator, for example to batch up
+    SeqRecord objects from Bio.SeqIO.parse(...), or to batch
+    Alignment objects from Bio.Align.parse(...), or simply
+    lines from a file handle.
+
+    This is a generator function, and it returns lists of the
+    entries from the supplied iterator.  Each list will have
+    batch_size entries, although the final list may be shorter.
+    """
+    batch = []
+    for entry in iterator:
+        batch.append(entry)
+        if len(batch) == batch_size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 def maester_assemble(folder,sample_name,cell_barcodes):
 
   # Length for CURIO
@@ -54,6 +76,8 @@ def maester_assemble(folder,sample_name,cell_barcodes):
   CB_length = 16
   _10x_umi_length = 12
 
+  # Load file in 1E7 read increments
+  batch_size = 1e7
 
 
 # ____________________________________________________________
@@ -103,42 +127,49 @@ def maester_assemble(folder,sample_name,cell_barcodes):
     # Create a list of new records.
     new_records = []
 
-    # Load file in 1E7 read increments
+    # Open file.fastq.gz 
     with gzip.open(r1_file, "rt") as f1 , \
          gzip.open(r2_file, "rt") as f2 :
+
 
       # Extract cell barcode or bead ID and umi from Read1
       r1_cell = []
       r1_umi = []
 
-      for r1_reads in SeqIO.parse(f1, "fastq"):
+      # Subset fastq for 10^7 reads so its faster to run.
 
-        # Check if these reads are from 10x Genomics
-        if len(r1_reads) == CB_length + _10x_umi_length:
+      for n_batch, batch in enumerate(batch_iterator(SeqIO.parse(f1, "fastq"), batch_size)):
 
-          # Cell ID
-          r1_cell.append(str(r1_reads.seq)[0:CB_length])
+        # Go through the reads in each batch
+        for r1_reads in batch:
 
-          # UMI 
-          r1_umi.append(str(r1_reads.seq)[CB_length : CB_length + _10x_umi_length ])
+          # Check if these reads are from 10x Genomics
+          if len(r1_reads) == CB_length + _10x_umi_length:
+
+            # Cell ID
+            r1_cell.append(str(r1_reads.seq)[0:CB_length])
+
+            # UMI 
+            r1_umi.append(str(r1_reads.seq)[CB_length : CB_length + _10x_umi_length ])
 
 
-        # Check if these reads are from CURIO
-        elif len(r1_reads) == BB1_length+linker_length+BB2_length + curio_umi_length + polyA:
-          # Bead ID 1 & 2
-          BB_1 = str(r1_reads.seq)[0:BB1_length]
-          BB_2 = str(r1_reads.seq)[BB1_length+linker_length:BB1_length+linker_length+BB2_length]
-          r1_cell.append(BB_1 + BB_2)
+          # Check if these reads are from CURIO
+          elif len(r1_reads) == BB1_length+linker_length+BB2_length + curio_umi_length + polyA:
+            # Bead ID 1 & 2
+            BB_1 = str(r1_reads.seq)[0:BB1_length]
+            BB_2 = str(r1_reads.seq)[BB1_length+linker_length:BB1_length+linker_length+BB2_length]
+            r1_cell.append(BB_1 + BB_2)
 
-          # UMI 
-          r1_umi.append(str(r1_reads.seq)[BB1_length+linker_length+BB2_length:BB1_length+linker_length+BB2_length + curio_umi_length ])
+            # UMI 
+            r1_umi.append(str(r1_reads.seq)[BB1_length+linker_length+BB2_length:BB1_length+linker_length+BB2_length + curio_umi_length ])
 
-        else:
-          raise ValueError("Length of R1 reads didn't match 10x Genomics or CURIO.")
-      
+          else:
+            raise ValueError("Length of R1 reads didn't match 10x Genomics or CURIO.")
+        
       # What cells match the whitelist
       set_cells = set(cells)
       index_of_cell = set([i for i, item in enumerate(r1_cell) if item in set_cells])
+
       # Open R2 and subset it based of cells that matched and change description ...
       # to include cell ID and UMI
       for i, r2_reads in enumerate(SeqIO.parse(f2, "fastq") ):
@@ -149,6 +180,7 @@ def maester_assemble(folder,sample_name,cell_barcodes):
 
           # Add the record to the list of new records.
           new_records.append(r2_reads)
+
 
       # Write the modified.fastq.gz
       with bgzf.BgzfWriter(folder+'/maester_assemble/' + args.sample_name.split('.')[0][0:-3] + '.fastq.gz', "wb") as output_handle:
