@@ -2,20 +2,26 @@
 
 This script:
 1) Finds the R1 fastq files in the specified folder.
-2) Filters for cell barcodes in the allowlist. The allowlist is a file that contains a list of cell barcodes that should be kept.
-3) Fastq files are reads in 10 million read increments. 
-... For each read, the code matches the cell barcode to the allowlist.
-... If the cell barcode is in the allowlist, the code increments a counter for the corresponding R1 file.
-6) A report containg the number of reads that were filtered by cell barcode for each R1 file is outputed.
-
-
+2) Filters for cell barcodes in the cell_barcodes. ...
+ ... The cell_barcodes is a file that contains a list of cell barcodes that should be kept.
+3) Fastq files are read in. For each read, the code matches the cell barcode to the cell_barcodes.
+... If the cell barcode is in the cell_barcodes, the code increments a counter for the corresponding R2 file.
+7) A final file.fastq.gz is created with sequences that matched and sequence name is updated to include CellID and UMI.
+6) A report containg the number of reads that were filtered by cell_barcodes for each file is outputed.
 
 Input:
 
-
+  folder = Folder containing fastq files")
+  sample_name= The names of the files (Ex. file1.fastq.gz file2.fastq.gz), use 'all' if you want to run all the fastqs in your folder.
+  cell_barcodes = File (.tsv or .txt) containing cell barcodes
 
 Output:
 
+ file.fastq.gz -> fastq with only sequences from R2 that matched the cell_barcodes. ...
+  This final file.fastq.gz will have the barcode (Cell ID or Bead Barcode) ...
+  and UMI from R1 and added to the the description (name) of the sequence. 
+
+  file.stats.txt -> summarry of sequences removed based on cell_barcodes.
 
 
 '''
@@ -23,9 +29,8 @@ Output:
 import subprocess
 import os
 import sys
-import Bio
 import gzip
-from Bio import SeqIO
+from Bio import SeqIO, bgzf
 
 def cutf(x, f=1, d="/", **kwargs):
   return sapply(strsplit(x, d), lambda i: i[f], **kwargs)
@@ -39,7 +44,8 @@ def maester_assemble(folder,sample_name,cell_barcodes):
   BB1_length = 8
   linker_length = 18
   BB2_length = 6
-  curio_umi_length = 4
+  curio_umi_length = 9
+  polyA = 10
 
   # Length for 10x genomics
   #   CB       UMI   
@@ -50,20 +56,39 @@ def maester_assemble(folder,sample_name,cell_barcodes):
 
 
 
+# ____________________________________________________________
+# ____________________________________________________________
+
+
+  # Create folder if it doesn't exist
+  if not os.path.exists(folder+'/maester_assemble'):
+    os.makedirs(folder+'/maester_assemble')
 
 
   # Find R1 fastq files
   r1_files = []
   for root, _, files in os.walk(folder):
     for file in files:
-      if file.endswith("_R1.fastq.gz"):
-        r1_files.append(os.path.join(root, file))
+
+      # Go through all R1.fastq.gz in the folder
+      if sample_name == 'all':
+        if file.endswith("_R1.fastq.gz"):
+          r1_files.append(os.path.join(root, file))
+
+      # Go through only files in sample_name
+      elif file in sample_name:
+        if file.endswith("_R1.fastq.gz"):
+          r1_files.append(os.path.join(root, file))
+
+  # Check if any files.fastq.gz were found
+  if r1_files == []:
+    raise ValueError("No file.fastq.gz were found.") 
 
   # Get cell barcodes in the allowlist
   cells = []
   with open(cell_barcodes, "r") as f:
     for line in f:
-      cells.append(line.strip())
+      cells.append(line.split()[0])
 
   # Check if any cells were found
   if cells == []:
@@ -73,7 +98,10 @@ def maester_assemble(folder,sample_name,cell_barcodes):
   report = {}
   for r1_file in r1_files:
     r2_file = r1_file.replace("_R1", "_R2")
-    print("Processing file: {}".format(r1_file))
+    print("Processing file: {} \n".format(r1_file))
+
+    # Create a list of new records.
+    new_records = []
 
     # Load file in 1E7 read increments
     with gzip.open(r1_file, "rt") as f1 , \
@@ -82,6 +110,7 @@ def maester_assemble(folder,sample_name,cell_barcodes):
       # Extract cell barcode or bead ID and umi from Read1
       r1_cell = []
       r1_umi = []
+
       for r1_reads in SeqIO.parse(f1, "fastq"):
 
         # Check if these reads are from 10x Genomics
@@ -94,8 +123,8 @@ def maester_assemble(folder,sample_name,cell_barcodes):
           r1_umi.append(str(r1_reads.seq)[CB_length : CB_length + _10x_umi_length ])
 
 
-        # Check if these reads are from 10x Genomics
-        elif len(r1_reads) == BB1_length+linker_length+BB2_length + curio_umi_length:
+        # Check if these reads are from CURIO
+        elif len(r1_reads) == BB1_length+linker_length+BB2_length + curio_umi_length + polyA:
           # Bead ID 1 & 2
           BB_1 = str(r1_reads.seq)[0:BB1_length]
           BB_2 = str(r1_reads.seq)[BB1_length+linker_length:BB1_length+linker_length+BB2_length]
@@ -106,32 +135,30 @@ def maester_assemble(folder,sample_name,cell_barcodes):
 
         else:
           raise ValueError("Length of R1 reads didn't match 10x Genomics or CURIO.")
+      
+      # What cells match the whitelist
+      set_cells = set(cells)
+      index_of_cell = set([i for i, item in enumerate(r1_cell) if item in set_cells])
+      # Open R2 and subset it based of cells that matched and change description ...
+      # to include cell ID and UMI
+      for i, r2_reads in enumerate(SeqIO.parse(f2, "fastq") ):
 
+        # Only keep cells that were matched
+        if i in index_of_cell:
+          r2_reads.description = r2_reads.description + '_' + r1_cell[i] + '_' +r1_umi[i]
 
+          # Add the record to the list of new records.
+          new_records.append(r2_reads)
 
+      # Write the modified.fastq.gz
+      with bgzf.BgzfWriter(folder+'/maester_assemble/' + args.sample_name.split('.')[0][0:-3] + '.fastq.gz', "wb") as output_handle:
+        SeqIO.write(sequences=new_records, handle=output_handle, format="fastq")
 
-      r2_array = []
-      r2_umi = []
-      for r2_reads in SeqIO.parse(f2, "fastq"):
-        r2_array.append(str(r2_reads.seq))
-        r2_umi.append(str(r2_reads.seq))
+      # Write report
 
-
-      cells_matched = list(set(r1_cell) - set(cells))
-
-      # print(cells_matched)
-
-      # output_handle = open("DIFF.fastq","w")
-
-      # SeqIO.write(needed_reads,output_handle,"fastq")
-
-      # output_handle.close()
-
-  # # Write report
-  # with open(args.sample_name + ".stats.txt", "w") as f:
-  #   f.write("all\tfiltered\tfraction\n")
-  #   for r1_file, count in report.items():
-  #     f.write("{}\t{}\t{:.2f}\n".format(count, count, count / 10**7))
+      with open(folder+'/maester_assemble/' + args.sample_name.split('.')[0][0:-3] + ".stats.txt", "w") as f:
+        f.write("all\tfiltered\tfraction\n")
+        f.write("{}\t{}\t{:.2f}\n".format(len(r1_cell), len(index_of_cell), len(index_of_cell) / len(r1_cell)))
 
 if __name__ == "__main__":
 

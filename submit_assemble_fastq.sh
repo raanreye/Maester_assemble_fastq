@@ -10,10 +10,6 @@
 module load python/3.9.1
 
 python /Users/raul/Documents/GitHub/Maester_assemble_fastq/Maester_assemble_fastq.py \
-	--folder /Volumes/GoogleDrive/.shortcut-targets-by-id/1CzHSa6eWu2vP_5qpBUKrCi8hMOj0gF1C/gier_shared/projects/gej_model/raul/subset_test/ \
-	--sample_name subset_R1 \
-	--cell_barcodes /Volumes/GoogleDrive/.shortcut-targets-by-id/1CzHSa6eWu2vP_5qpBUKrCi8hMOj0gF1C/gier_shared/projects/gej_model/raul/barcodes.tsv \
-	--BB1_length 8 \
-	--linker_length 18 \
-	--BB2_length 6 \
-	--umi_length 4
+	--folder /Users/raul/Downloads/curio_seeker_pipeline_v1.0.3/Mouse_liver/ \
+	--sample_name Mouse_liver_R1.fastq.gz \
+	--cell_barcodes /Users/raul/Downloads/curio_seeker_pipeline_v1.0.3/Mouse_liver/A0018_040_BeadBarcodes.txt 
