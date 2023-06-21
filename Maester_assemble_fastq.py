@@ -59,6 +59,8 @@ def batch_iterator(iterator, batch_size):
 
 def maester_assemble(folder,sample_name,cell_barcodes):
 
+  index_1_2_length = 8
+
   # Length for CURIO
   #   BB1    linker   BB2   UMI
   # _______ ________ ______ ___ final sequence
@@ -155,6 +157,7 @@ def maester_assemble(folder,sample_name,cell_barcodes):
 
           # Check if these reads are from CURIO
           elif len(r1_reads) == BB1_length+linker_length+BB2_length + curio_umi_length + polyA:
+
             # Bead ID 1 & 2
             BB_1 = str(r1_reads.seq)[0:BB1_length]
             BB_2 = str(r1_reads.seq)[BB1_length+linker_length:BB1_length+linker_length+BB2_length]
@@ -181,10 +184,12 @@ def maester_assemble(folder,sample_name,cell_barcodes):
           # Only keep cells that were matched
           if cnt in index_of_cell:
 
-            r2_reads.description = r2_reads.description + '_' + r1_cell[cnt] + '_' +r1_umi[cnt]
-
-            # Add the record to the list of new records.
-            new_records.append(r2_reads)
+              hold_description = r2_reads.description.split(' ')[0] + '_' + r2_reads.description.split(' ')[1][(-1-2*index_1_2_length):]+ '_' + r1_cell[cnt] + '_' +r1_umi[cnt]
+              r2_reads.id = hold_description
+              r2_reads.description = '<unknown description>' # standard for SeqIO
+              
+              # Add the record to the list of new records.
+              new_records.append(r2_reads)
             
           cnt += 1
 
@@ -194,7 +199,6 @@ def maester_assemble(folder,sample_name,cell_barcodes):
         SeqIO.write(sequences=new_records, handle=output_handle, format="fastq")
 
       # Write report
-
       with open(folder+'/maester_assemble/' + args.sample_name.split('.')[0][0:-3] + ".stats.txt", "w") as f:
         f.write("all\tfiltered\tfraction\n")
         f.write("{}\t{}\t{:.2f}\n".format(len(r1_cell), len(index_of_cell), len(index_of_cell) / len(r1_cell)))
